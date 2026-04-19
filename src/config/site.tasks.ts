@@ -5,7 +5,7 @@ export const siteTaskDefinitions = [
     route: '/listings',
     description: 'Verified businesses and services.',
     contentType: 'listing',
-    enabled: true,
+    enabled: false,
   },
   {
     key: 'classified',
@@ -13,7 +13,7 @@ export const siteTaskDefinitions = [
     route: '/classifieds',
     description: 'Local offers, jobs, and deals.',
     contentType: 'classified',
-    enabled: true,
+    enabled: false,
   },
   {
     key: 'article',
@@ -21,7 +21,7 @@ export const siteTaskDefinitions = [
     route: '/articles',
     description: 'Insights, blogs, and long-form content.',
     contentType: 'article',
-    enabled: true,
+    enabled: false,
   },
   {
     key: 'image',
@@ -37,7 +37,7 @@ export const siteTaskDefinitions = [
     route: '/profile',
     description: 'Creator and business profiles.',
     contentType: 'profile',
-    enabled: true,
+    enabled: false,
   },
   {
     key: 'sbm',
@@ -45,7 +45,7 @@ export const siteTaskDefinitions = [
     route: '/sbm',
     description: 'Curated bookmarks and resources.',
     contentType: 'social',
-    enabled: true,
+    enabled: false,
   },
   {
     key: 'comment',
@@ -61,7 +61,7 @@ export const siteTaskDefinitions = [
     route: '/pdf',
     description: 'PDF resources and downloads.',
     contentType: 'pdf',
-    enabled: true,
+    enabled: false,
   },
   {
     key: 'org',
