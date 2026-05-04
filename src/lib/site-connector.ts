@@ -1,3 +1,5 @@
+import { siteIdentity } from "@/config/site.identity";
+
 export type SitePost = {
   id: string;
   title: string;
@@ -32,7 +34,7 @@ export type SiteFeed<TPost = SitePost> = {
 const API_BASE =
   process.env.NEXT_PUBLIC_MASTER_PANEL_URL ||
   process.env.NEXT_PUBLIC_MASTER_API_URL;
-const SITE_CODE = process.env.NEXT_PUBLIC_SITE_CODE;
+const SITE_CODE = process.env.NEXT_PUBLIC_SITE_CODE || siteIdentity.code;
 const FEED_REVALIDATE_SECONDS = (() => {
   const parsed = Number(process.env.NEXT_PUBLIC_FEED_REVALIDATE_SECONDS ?? 300);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 300;
