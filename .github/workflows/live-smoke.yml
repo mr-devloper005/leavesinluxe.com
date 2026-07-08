@@ -1,0 +1,60 @@
+name: Live Smoke Checks
+
+on:
+  workflow_dispatch:
+    inputs:
+      site_url:
+        description: 'Live site URL, example: https://example.com'
+        required: true
+        type: string
+      visual:
+        description: 'Also capture visual screenshots'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  MAX_PUBLIC_IMAGE_KB: 5000
+  MAX_PUBLIC_ICON_KB: 5000
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  live-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.1
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Live connector health
+        env:
+          SITE_URL: ${{ inputs.site_url }}
+        run: pnpm check:live
+
+      - name: Install Chromium
+        if: ${{ inputs.visual }}
+        run: pnpm exec playwright install chromium
+
+      - name: Visual smoke screenshots
+        if: ${{ inputs.visual }}
+        env:
+          SITE_URL: ${{ inputs.site_url }}
+        run: pnpm check:visual
+
+      - name: Upload screenshots
+        if: ${{ inputs.visual }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-smoke-output
+          path: visual-smoke-output

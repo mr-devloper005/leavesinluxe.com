@@ -1,0 +1,165 @@
+name: Build Push Deploy VPS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: deploy-${{ github.repository }}
+  cancel-in-progress: true
+
+env:
+  MAX_PUBLIC_IMAGE_KB: 5000
+  MAX_PUBLIC_ICON_KB: 5000
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    outputs:
+      image: ${{ steps.image.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve image name
+        id: image
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo_lower="${GITHUB_REPOSITORY,,}"
+          echo "image=ghcr.io/${repo_lower}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "latest=ghcr.io/${repo_lower}:latest" >> "$GITHUB_OUTPUT"
+
+      - name: Image budget
+        run: pnpm images:budget
+
+      - name: Build and push image
+        shell: bash
+        env:
+          APP_ENV_PRODUCTION: ${{ secrets.APP_ENV_PRODUCTION }}
+          IMAGE: ${{ steps.image.outputs.image }}
+          IMAGE_LATEST: ${{ steps.image.outputs.latest }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$APP_ENV_PRODUCTION" > .env.build
+          node scripts/validate-env.mjs .env.build
+          set -a
+          . ./.env.build
+          set +a
+
+          built_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          docker buildx build \
+            --push \
+            --cache-from type=gha \
+            --cache-to type=gha,mode=max \
+            --tag "$IMAGE" \
+            --tag "$IMAGE_LATEST" \
+            --build-arg NEXT_PUBLIC_MASTER_PANEL_URL="${NEXT_PUBLIC_MASTER_PANEL_URL:-}" \
+            --build-arg NEXT_PUBLIC_MASTER_API_URL="${NEXT_PUBLIC_MASTER_API_URL:-}" \
+            --build-arg NEXT_PUBLIC_SITE_CODE="${NEXT_PUBLIC_SITE_CODE:-}" \
+            --build-arg NEXT_PUBLIC_FEED_REVALIDATE_SECONDS="${NEXT_PUBLIC_FEED_REVALIDATE_SECONDS:-}" \
+            --build-arg NEXT_PUBLIC_SITE_NAME="${NEXT_PUBLIC_SITE_NAME:-}" \
+            --build-arg NEXT_PUBLIC_SITE_TAGLINE="${NEXT_PUBLIC_SITE_TAGLINE:-}" \
+            --build-arg NEXT_PUBLIC_SITE_DESCRIPTION="${NEXT_PUBLIC_SITE_DESCRIPTION:-}" \
+            --build-arg NEXT_PUBLIC_SITE_DOMAIN="${NEXT_PUBLIC_SITE_DOMAIN:-}" \
+            --build-arg NEXT_PUBLIC_SITE_URL="${NEXT_PUBLIC_SITE_URL:-}" \
+            --build-arg NEXT_PUBLIC_SITE_OG_IMAGE="${NEXT_PUBLIC_SITE_OG_IMAGE:-}" \
+            --build-arg APP_GIT_SHA="$GITHUB_SHA" \
+            --build-arg APP_BUILT_AT="$built_at" \
+            .
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.2
+        env:
+          APP_ENV_PRODUCTION: ${{ secrets.APP_ENV_PRODUCTION }}
+          DEPLOY_IMAGE: ${{ needs.build-and-push.outputs.image }}
+          REPO_NAME: ${{ github.event.repository.name }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT }}
+          timeout: 180s
+          command_timeout: 20m
+          envs: APP_ENV_PRODUCTION,DEPLOY_IMAGE,REPO_NAME,GHCR_USERNAME,GHCR_TOKEN
+          script: |
+            set -euo pipefail
+            APP_ROOT="/opt/slot4-sites"
+            APP_DIR="$APP_ROOT/$REPO_NAME"
+
+            mkdir -p ~/.ssh
+            ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null || true
+            chmod 700 ~/.ssh
+            chmod 600 ~/.ssh/known_hosts 2>/dev/null || true
+
+            mkdir -p "$APP_ROOT"
+            if [ ! -d "$APP_DIR/.git" ]; then
+              git clone "https://x-access-token:${GHCR_TOKEN}@github.com/mr-devloper005/$REPO_NAME.git" "$APP_DIR"
+            fi
+
+            cd "$APP_DIR"
+
+            printf '%s\n' "$APP_ENV_PRODUCTION" > .env
+            printf '\nDEPLOY_IMAGE=%s\n' "$DEPLOY_IMAGE" >> .env
+            chmod 600 .env
+
+            git remote set-url origin "https://x-access-token:${GHCR_TOKEN}@github.com/mr-devloper005/$REPO_NAME.git" 2>/dev/null || true
+            git fetch origin main
+            git checkout main
+            git reset --hard origin/main
+
+            if [ -z "${GHCR_USERNAME:-}" ] || [ -z "${GHCR_TOKEN:-}" ]; then
+              echo "Deploy preflight failed: GHCR_USERNAME and GHCR_TOKEN secrets are required for VPS image pull."
+              exit 1
+            fi
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+
+            docker compose -f docker-compose.vps.yml pull
+            docker compose -f docker-compose.vps.yml up -d --remove-orphans
+            docker compose -f docker-compose.vps.yml ps
+
+            APP_PORT_VALUE="$(grep -E "^APP_PORT=" .env | tail -1 | cut -d= -f2- || true)"
+            APP_PORT_VALUE="${APP_PORT_VALUE:-3020}"
+            for i in 1 2 3 4 5; do
+              if wget -qO- "http://127.0.0.1:${APP_PORT_VALUE}/api/health"; then
+                echo "Deploy health check passed."
+                exit 0
+              fi
+              sleep 3
+            done
+            echo "Deploy health check failed after restart."
+            exit 1

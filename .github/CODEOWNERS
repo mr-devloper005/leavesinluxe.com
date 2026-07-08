@@ -1,0 +1,20 @@
+# Default everything to owner review.
+* @mr-devloper005
+
+# UI surface still belongs to owner by default, but this makes the editable boundary explicit.
+/src/editable/ @mr-devloper005
+/public/ @mr-devloper005
+
+# Locked runtime and automation paths.
+/.github/ @mr-devloper005
+/scripts/ @mr-devloper005
+/src/app/api/ @mr-devloper005
+/src/lib/ @mr-devloper005
+/src/config/ @mr-devloper005
+/src/components/ @mr-devloper005
+/src/design/ @mr-devloper005
+/Dockerfile @mr-devloper005
+/docker-compose.vps.yml @mr-devloper005
+/package.json @mr-devloper005
+/pnpm-lock.yaml @mr-devloper005
+/next.config.mjs @mr-devloper005

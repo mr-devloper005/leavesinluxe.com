@@ -1,0 +1,36 @@
+name: Auto Merge Main Promotion PR
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: write
+  pull-requests: write
+  checks: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  enable-main-auto-merge:
+    if: ${{ !github.event.pull_request.draft && github.event.pull_request.head.ref == 'dev' && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Enable auto-merge for dev to main promotion PR
+        env:
+          GH_TOKEN: ${{ secrets.SLOT4_AUTOMATION_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "SLOT4_AUTOMATION_TOKEN secret is required."
+            exit 1
+          fi
+          gh pr merge "$PR_NUMBER" --auto --squash

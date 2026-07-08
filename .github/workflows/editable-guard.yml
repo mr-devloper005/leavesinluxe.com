@@ -1,0 +1,56 @@
+name: Slot 4 PR Safety Checks
+
+on:
+  pull_request:
+    branches: [dev, main]
+
+env:
+  MAX_PUBLIC_IMAGE_KB: 5000
+  MAX_PUBLIC_ICON_KB: 5000
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  ui-pr-safety:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.1
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate AI edit report
+        run: |
+          node scripts/ai-edit-report.mjs > ai-edit-report.md
+          cat ai-edit-report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check editable boundary
+        run: pnpm guard:editable:ci
+
+      - name: Check duplicate theme/UI structure
+        run: pnpm check:editable-structure
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Run Jest contract tests
+        run: pnpm test:ci
+
+      - name: Build
+        run: pnpm build
+
+      - name: Check build size budget
+        run: pnpm check:budget
+
+      - name: Check image budget
+        run: pnpm images:budget

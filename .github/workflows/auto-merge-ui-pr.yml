@@ -1,0 +1,124 @@
+name: Auto Merge Safe UI PRs
+
+on:
+  pull_request:
+    branches: [dev]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: write
+  pull-requests: write
+  checks: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  enable-auto-merge:
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Allow auto-merge only for trusted repo users
+        shell: bash
+        env:
+          AUTHOR_ASSOCIATION: ${{ github.event.pull_request.author_association }}
+        run: |
+          set -euo pipefail
+          case "$AUTHOR_ASSOCIATION" in
+            OWNER|MEMBER|COLLABORATOR)
+              echo "Trusted PR author association: $AUTHOR_ASSOCIATION"
+              ;;
+            *)
+              echo "Blocked auto-merge: untrusted PR author association: $AUTHOR_ASSOCIATION"
+              exit 1
+              ;;
+          esac
+
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Verify PR only touches editable surface
+        env:
+          GH_TOKEN: ${{ secrets.SLOT4_AUTOMATION_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh pr diff "$PR_NUMBER" --name-only > changed-files.txt
+          disallowed=0
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            case "$file" in
+              src/editable/*|src/editable/**|public/*|public/**|next-env.d.ts|pnpm-workspace.yaml|src/app/page.tsx|src/app/about/page.tsx|src/app/contact/page.tsx|src/app/login/page.tsx|src/app/signup/page.tsx|src/app/search/page.tsx|src/app/create/page.tsx|src/app/article/page.tsx|src/app/article/[slug]/page.tsx|src/app/listing/page.tsx|src/app/listing/[slug]/page.tsx|src/app/classified/page.tsx|src/app/classified/[slug]/page.tsx|src/app/image/page.tsx|src/app/image/[slug]/page.tsx|src/app/pdf/page.tsx|src/app/pdf/[slug]/page.tsx|src/app/sbm/page.tsx|src/app/sbm/[slug]/page.tsx|src/app/business-listing/page.tsx|src/app/business-listings/page.tsx|src/app/profile/page.tsx|src/app/profiles/page.tsx) ;;
+              *) echo "Blocked auto-merge: non-editable file changed: $file"; disallowed=1 ;;
+            esac
+          done < changed-files.txt
+          exit "$disallowed"
+
+      - name: Merge safe PR to dev, then promote dev to main
+        env:
+          GH_TOKEN: ${{ secrets.SLOT4_AUTOMATION_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "SLOT4_AUTOMATION_TOKEN secret is required."
+            exit 1
+          fi
+
+          for attempt in {1..60}; do
+            checks_json="$(gh pr checks "$PR_NUMBER" --json name,state,bucket)"
+            failed_count="$(jq '[.[] | select(.bucket == "fail" or .bucket == "cancel")] | length' <<<"$checks_json")"
+            pending_count="$(jq '[.[] | select(.name != "enable-auto-merge" and .bucket != "pass" and .bucket != "skipping")] | length' <<<"$checks_json")"
+
+            if [[ "$failed_count" != "0" ]]; then
+              echo "Required/visible checks failed:"
+              jq -r '.[] | select(.bucket == "fail" or .bucket == "cancel") | "- \(.name): \(.bucket)"' <<<"$checks_json"
+              exit 1
+            fi
+
+            if [[ "$pending_count" == "0" ]]; then
+              echo "Checks are ready."
+              break
+            fi
+
+            echo "Waiting for checks to complete... attempt $attempt"
+            sleep 10
+          done
+
+          gh pr merge "$PR_NUMBER" --squash --delete-branch
+
+          for attempt in {1..30}; do
+            ahead_by="$(gh api "repos/${GITHUB_REPOSITORY}/compare/main...dev" --jq '.ahead_by')"
+            if [[ "$ahead_by" != "0" ]]; then
+              break
+            fi
+            echo "Waiting for dev to move ahead of main... attempt $attempt"
+            sleep 5
+          done
+
+          ahead_by="$(gh api "repos/${GITHUB_REPOSITORY}/compare/main...dev" --jq '.ahead_by')"
+          if [[ "$ahead_by" == "0" ]]; then
+            echo "No promotion needed."
+            exit 0
+          fi
+
+          existing_pr="$(gh pr list --base main --head dev --state open --json number --jq '.[0].number // empty')"
+          if [[ -n "$existing_pr" ]]; then
+            promotion_pr="$existing_pr"
+            echo "Promotion PR already open: #$promotion_pr"
+          else
+            promotion_url="$(gh pr create \
+              --repo "$GITHUB_REPOSITORY" \
+              --base main \
+              --head dev \
+              --title "Promote dev to main" \
+              --body "Auto-created promotion PR after successful merge to dev.")"
+            promotion_pr="${promotion_url##*/}"
+            echo "Promotion PR created: #$promotion_pr"
+          fi
+
+          gh pr merge "$promotion_pr" --auto --squash

@@ -1,0 +1,65 @@
+{
+  "name": "my-project",
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.28.1",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "bootstrap:site": "node scripts/bootstrap-site.mjs",
+    "guard:editable": "node scripts/guard-editable.mjs",
+    "guard:editable:ci": "node scripts/guard-editable-ci.mjs",
+    "check:routes": "node scripts/check-site-routes.mjs",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:ci": "jest --ci --runInBand",
+    "check:env": "node scripts/validate-env.mjs",
+    "check:live": "node scripts/check-live.mjs",
+    "check:editable-structure": "node scripts/check-editable-structure.mjs",
+    "check:budget": "node scripts/check-build-budget.mjs",
+    "check:visual": "node scripts/visual-smoke.mjs",
+    "visual:install": "playwright install chromium",
+    "images:report": "node scripts/optimize-images.mjs --dry-run",
+    "images:optimize": "node scripts/optimize-images.mjs",
+    "images:budget": "node scripts/optimize-images.mjs --dry-run --fail-on-large",
+    "ops:health": "node scripts/check-inventory-health.mjs",
+    "ops:cleanup:docs": "printf \"Run scripts/vps-docker-cleanup.sh on VPS, not in CI.\n\""
+  },
+  "dependencies": {
+    "@radix-ui/react-slot": "1.2.4",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.564.0",
+    "next": "16.1.6",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "tailwind-merge": "^3.3.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0",
+    "@tailwindcss/postcss": "^4.2.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^22",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "eslint": "^9.39.1",
+    "eslint-config-next": "^16.2.6",
+    "jest": "^30.4.2",
+    "jest-environment-jsdom": "^30.4.1",
+    "postcss": "^8.5",
+    "sharp": "^0.34.5",
+    "tailwindcss": "^4.2.0",
+    "tw-animate-css": "1.3.3",
+    "typescript": "5.7.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "sharp",
+      "unrs-resolver"
+    ]
+  }
+}

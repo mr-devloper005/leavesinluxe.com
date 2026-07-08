@@ -1,0 +1,63 @@
+name: Promote Dev To Main PR
+
+on:
+  push:
+    branches: [dev]
+  pull_request:
+    branches: [dev]
+    types: [closed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: promote-dev-to-main-${{ github.repository }}
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  open-promotion-pr:
+    if: ${{ github.event_name == 'push' || github.event.pull_request.merged == true }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Create/reuse and auto-merge dev to main PR
+        env:
+          GH_TOKEN: ${{ secrets.SLOT4_AUTOMATION_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "SLOT4_AUTOMATION_TOKEN secret is required."
+            exit 1
+          fi
+
+          ahead_by="$(gh api "repos/${GITHUB_REPOSITORY}/compare/main...dev" --jq '.ahead_by')"
+          if [[ "$ahead_by" == "0" ]]; then
+            echo "No commits waiting between dev and main."
+            exit 0
+          fi
+
+          existing_pr="$(gh pr list --base main --head dev --state open --json number --jq '.[0].number // empty')"
+          if [[ -n "$existing_pr" ]]; then
+            promotion_pr="$existing_pr"
+            echo "Promotion PR already open: #$promotion_pr"
+          else
+            promotion_url="$(gh pr create \
+              --repo "$GITHUB_REPOSITORY" \
+              --base main \
+              --head dev \
+              --title "Promote dev to main" \
+              --body "Auto-created promotion PR after successful merge to dev.")"
+            promotion_pr="${promotion_url##*/}"
+            echo "Promotion PR created: #$promotion_pr"
+          fi
+
+          gh pr merge "$promotion_pr" --auto --squash

@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "defaults": {
+    "vps": "primary-automation-vps",
+    "masterPanelUrl": "https://masterpanel.example.com",
+    "ghcrOwner": "mr-devloper005"
+  },
+  "sites": [
+    {
+      "domain": "example.com",
+      "repo": "example.com",
+      "siteCode": "example_site",
+      "vps": "primary-automation-vps",
+      "port": 3020,
+      "url": "https://example.com",
+      "ghcrImage": "ghcr.io/mr-devloper005/example.com:latest",
+      "envStatus": "ready",
+      "deployStatus": "unknown"
+    }
+  ]
+}
