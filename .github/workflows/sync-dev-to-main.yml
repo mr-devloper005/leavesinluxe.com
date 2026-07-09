@@ -1,0 +1,62 @@
+name: Sync dev to main
+
+# Permanent fix for the dev<->main squash-divergence conflict.
+# After every promotion (push to main), reset `dev` back to `main` — but ONLY when
+# their content (tree) is already identical (i.e. right after a squash-promotion),
+# so an un-promoted feature already merged to dev is never lost.
+# `dev` protection has allow_force_pushes:true so this owner-token reset is allowed,
+# while collaborators still can't push to dev directly (PR required).
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: sync-dev-to-main-${{ github.repository }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  sync-dev:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reset dev to main when content matches
+        env:
+          GH_TOKEN: ${{ secrets.SLOT4_AUTOMATION_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "SLOT4_AUTOMATION_TOKEN missing — skipping dev sync."
+            exit 0
+          fi
+          REPO="$GITHUB_REPOSITORY"
+          MAIN_SHA="$GITHUB_SHA"
+
+          DEV_SHA="$(gh api "repos/$REPO/git/ref/heads/dev" -q '.object.sha' 2>/dev/null || echo '')"
+          if [ -z "$DEV_SHA" ]; then echo "No dev branch — nothing to sync."; exit 0; fi
+          if [ "$DEV_SHA" = "$MAIN_SHA" ]; then echo "dev already equals main."; exit 0; fi
+
+          # Decide if it's SAFE to realign dev onto main (i.e. dev has nothing un-promoted):
+          #   status "behind"  -> main strictly ahead, dev fully contained  -> safe
+          #   trees identical  -> post-squash: same content, different history -> safe
+          #   otherwise (dev has commits/content main lacks) -> un-promoted work -> skip
+          STATUS="$(gh api "repos/$REPO/compare/main...dev" -q '.status' 2>/dev/null || echo '')"
+          SAFE=0
+          if [ "$STATUS" = "behind" ]; then
+            SAFE=1
+          else
+            MAIN_TREE="$(gh api "repos/$REPO/git/commits/$MAIN_SHA" -q '.tree.sha')"
+            DEV_TREE="$(gh api "repos/$REPO/git/commits/$DEV_SHA" -q '.tree.sha')"
+            [ "$MAIN_TREE" = "$DEV_TREE" ] && SAFE=1
+          fi
+          if [ "$SAFE" != "1" ]; then
+            echo "dev has un-promoted content (status=$STATUS) — skipping reset."
+            exit 0
+          fi
+
+          echo "Safe to realign (status=$STATUS) — resetting dev to main ($MAIN_SHA)."
+          gh api -X PATCH "repos/$REPO/git/refs/heads/dev" -f sha="$MAIN_SHA" -F force=true >/dev/null
+          echo "dev is now aligned with main. No more divergence."
