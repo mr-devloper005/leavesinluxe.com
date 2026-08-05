@@ -1,5 +1,5 @@
 import { SITE_CONFIG, type TaskKey } from "./site-config";
-import { fetchSiteFeed, fetchSitePost, type SiteFeed, type SiteFeedPagination, type SitePost } from "./site-connector";
+import { fetchSiteFeed, fetchSitePostResult, type SiteFeed, type SiteFeedPagination, type SitePost } from "./site-connector";
 import { getMockPostsForTask } from "./mock-posts";
 import { isValidCategory, normalizeCategory } from "./categories";
 
@@ -221,11 +221,17 @@ export const fetchTaskPostBySlug = async (task: TaskKey, slug: string) => {
     feed?.posts.find((post) => post.slug === slug && matchesTaskContentType(post, type)) || null;
 
   try {
-    const direct = await fetchSitePost<SitePost>(slug, { task: type });
+    const directResult = await fetchSitePostResult<SitePost>(slug, { fresh: true, task: type });
+    const direct = directResult.data;
     if (direct?.post && matchesTaskContentType(direct.post, type)) return direct.post;
 
-    const freshDirect = await fetchSitePost<SitePost>(slug, { fresh: true, task: type });
-    if (freshDirect?.post && matchesTaskContentType(freshDirect.post, type)) return freshDirect.post;
+    // The master panel definitively reports this slug as gone (deleted backlink).
+    // Return 404 now — do NOT resurrect it from a stale cached feed below.
+    if (directResult.status === 404 || directResult.status === 410) {
+      return allowMockFallback
+        ? getMockPostsForTask(task).find((post) => post.slug === slug) || null
+        : null;
+    }
 
     // Legacy fallback only: useful when old master-panel versions do not expose /post/:slug.
     const cachedFeed = await fetchSiteFeed(1000, { task: type });
