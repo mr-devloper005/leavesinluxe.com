@@ -75,9 +75,18 @@ const readMemoryFallback = <T>(key: string): T | null => {
   return cached.data as T;
 };
 
-async function fetchPublicJson<T>(path: string, options?: { fresh?: boolean; timeoutMs?: number }): Promise<T | null> {
+// Returns the payload AND the upstream HTTP status so callers can tell a definitive
+// "gone" (404/410) apart from a transient outage. The in-memory fallback is an
+// OUTAGE-resilience feature (keep serving last-known-good while the API blips) — it
+// must NEVER resurrect content the API has deliberately removed. So on a 404/410 we
+// drop any held fallback and report the resource as gone; the memory fallback is
+// only served for transient failures (5xx/429/network error/timeout).
+async function fetchPublicJsonEx<T>(
+  path: string,
+  options?: { fresh?: boolean; timeoutMs?: number }
+): Promise<{ data: T | null; status: number | null }> {
   const target = getPublicUrl(path);
-  if (!target) return null;
+  if (!target) return { data: null, status: null };
 
   try {
     const signal =
@@ -92,22 +101,33 @@ async function fetchPublicJson<T>(path: string, options?: { fresh?: boolean; tim
     });
 
     if (!response.ok) {
+      // Definitively gone upstream (deleted): never serve stale, evict the fallback.
+      if (response.status === 404 || response.status === 410) {
+        memoryFallback.delete(target);
+        return { data: null, status: response.status };
+      }
+      // Transient upstream failure: serve last-known-good if we still have it.
       if (process.env.NODE_ENV !== "production") {
         console.warn(`Public connector request failed (${response.status}) for ${target}`);
       }
-      return readMemoryFallback<T>(target);
+      return { data: readMemoryFallback<T>(target), status: response.status };
     }
 
     const json = (await response.json()) as { success: boolean; data?: T };
     const data = json.data || null;
     if (data) saveMemoryFallback(target, data);
-    return data;
+    return { data, status: response.status };
   } catch (error) {
     if (process.env.NODE_ENV !== "production" && !(error instanceof DOMException && error.name === "TimeoutError")) {
       console.warn("Public connector request failed", error);
     }
-    return readMemoryFallback<T>(target);
+    // Network error / timeout — treat as a transient outage, serve last-known-good.
+    return { data: readMemoryFallback<T>(target), status: null };
   }
+}
+
+async function fetchPublicJson<T>(path: string, options?: { fresh?: boolean; timeoutMs?: number }): Promise<T | null> {
+  return (await fetchPublicJsonEx<T>(path, options)).data;
 }
 
 export async function fetchSiteBootstrap(options?: { fresh?: boolean }): Promise<SiteBootstrap | null> {
@@ -115,21 +135,31 @@ export async function fetchSiteBootstrap(options?: { fresh?: boolean }): Promise
 }
 
 
-export async function fetchSitePost<TPost = SitePost>(
+// Status-aware single-post fetch. `status === 404 | 410` means the master panel
+// has definitively removed this post (deleted backlink) — the caller should 404
+// immediately and must NOT fall back to a cached feed that may still list it.
+export async function fetchSitePostResult<TPost = SitePost>(
   slug: string,
   options?: { fresh?: boolean; task?: string; timeoutMs?: number }
-): Promise<(SiteBootstrap & { post: TPost }) | null> {
+): Promise<{ data: (SiteBootstrap & { post: TPost }) | null; status: number | null }> {
   const safeSlug = String(slug || "").trim();
-  if (!safeSlug) return null;
+  if (!safeSlug) return { data: null, status: null };
   const params = new URLSearchParams();
   if (typeof options?.task === "string" && options.task.trim()) {
     params.set("task", options.task.trim().toLowerCase());
   }
   const query = params.toString();
-  return fetchPublicJson<SiteBootstrap & { post: TPost }>(
+  return fetchPublicJsonEx<SiteBootstrap & { post: TPost }>(
     `/post/${encodeURIComponent(safeSlug)}${query ? `?${query}` : ""}`,
     options
   );
+}
+
+export async function fetchSitePost<TPost = SitePost>(
+  slug: string,
+  options?: { fresh?: boolean; task?: string; timeoutMs?: number }
+): Promise<(SiteBootstrap & { post: TPost }) | null> {
+  return (await fetchSitePostResult<TPost>(slug, options)).data;
 }
 
 export async function fetchSiteFeed<TPost = SitePost>(
