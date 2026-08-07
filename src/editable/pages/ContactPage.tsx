@@ -1,26 +1,18 @@
 'use client'
 
-import { Building2, FileText, Image as ImageIcon, Mail, MapPin, Phone, Sparkles, Bookmark } from 'lucide-react'
+import { Building2, FileText, Image as ImageIcon, Mail, Sparkles, Bookmark } from 'lucide-react'
 import { pagesContent } from '@/editable/content/pages.content'
 import { getFactoryState } from '@/design/factory/get-factory-state'
 import { getProductKind } from '@/design/factory/get-product-kind'
 import { EditableContactLeadForm } from '@/editable/components/EditableContactLeadForm'
 import { EditableSiteShell } from '@/editable/shell/EditableSiteShell'
 
-const tone = {
-  shell: 'bg-[var(--slot4-page-bg)] text-[var(--slot4-page-text)]',
-  panel: 'border border-[var(--editable-border)] bg-[var(--slot4-surface-bg)]',
-  soft: 'border border-[var(--editable-border)] bg-[var(--slot4-panel-bg)]',
-  muted: 'text-[var(--slot4-muted-text)]',
-  action: 'bg-[var(--slot4-accent-fill)] text-[var(--slot4-on-accent)] hover:opacity-90',
-}
-
 function getLanes(kind: ReturnType<typeof getProductKind>) {
   if (kind === 'directory') {
     return [
       { icon: Building2, title: 'Business onboarding', body: 'Add listings, verify operational details, and bring your business surface live quickly.' },
-      { icon: Phone, title: 'Partnership support', body: 'Talk through bulk publishing, local growth, and operational setup questions.' },
-      { icon: MapPin, title: 'Coverage requests', body: 'Need a new geography or category lane? We can shape the directory around it.' },
+      { icon: Mail, title: 'Partnership support', body: 'Talk through bulk publishing, local growth, and operational setup questions.' },
+      { icon: Sparkles, title: 'Coverage requests', body: 'Need a new geography or category lane? We can shape the directory around it.' },
     ]
   }
   if (kind === 'editorial') {
@@ -50,29 +42,37 @@ export default function ContactPage() {
   const lanes = getLanes(productKind)
 
   return (
-    <EditableSiteShell className={tone.shell}>
-      <main className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
-        <section className="grid gap-8 lg:grid-cols-[0.95fr_1.05fr] lg:items-start">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--slot4-accent)]">{pagesContent.contact.eyebrow}</p>
-            <h1 className="editable-display mt-4 text-5xl font-semibold tracking-[-0.02em]">{pagesContent.contact.title}</h1>
-            <p className={`mt-5 max-w-2xl text-sm leading-8 ${tone.muted}`}>{pagesContent.contact.description}</p>
-            <div className="mt-8 space-y-4">
+    <EditableSiteShell>
+      <main>
+        {/* Header */}
+        <section className="border-b border-[var(--editable-border)] bg-[var(--slot4-surface-bg)]">
+          <div className="mx-auto max-w-[var(--editable-container)] px-4 py-14 sm:px-6 sm:py-16 lg:px-8">
+            <p className="text-sm font-medium text-[var(--slot4-accent)]">{pagesContent.contact.eyebrow}</p>
+            <h1 className="editable-display mt-3 max-w-2xl text-3xl leading-[1.1] sm:text-4xl">{pagesContent.contact.title}</h1>
+            <p className="mt-3 max-w-xl text-sm leading-6 text-[var(--slot4-muted-text)]">{pagesContent.contact.description}</p>
+          </div>
+        </section>
+
+        <div className="mx-auto max-w-[var(--editable-container)] px-4 py-12 sm:px-6 lg:px-8">
+          <div className="grid gap-8 lg:grid-cols-[0.95fr_1.05fr] lg:items-start">
+            {/* Lanes */}
+            <div className="space-y-4">
               {lanes.map((lane) => (
-                <div key={lane.title} className={`rounded-sm p-5 ${tone.soft}`}>
+                <div key={lane.title} className="border border-[var(--editable-border)] bg-[var(--slot4-surface-bg)] p-5">
                   <lane.icon className="h-5 w-5 text-[var(--slot4-accent)]" />
-                  <h2 className="editable-display mt-3 text-xl font-semibold">{lane.title}</h2>
-                  <p className={`mt-2 text-sm leading-7 ${tone.muted}`}>{lane.body}</p>
+                  <h2 className="editable-display mt-3 text-lg">{lane.title}</h2>
+                  <p className="mt-1.5 text-sm leading-6 text-[var(--slot4-muted-text)]">{lane.body}</p>
                 </div>
               ))}
             </div>
-          </div>
 
-          <div className={`rounded-sm p-7 ${tone.panel}`}>
-            <h2 className="editable-display text-2xl font-semibold">{pagesContent.contact.formTitle}</h2>
-            <EditableContactLeadForm />
+            {/* Form */}
+            <div className="border border-[var(--editable-border)] bg-[var(--slot4-surface-bg)] p-6">
+              <h2 className="editable-display text-xl">{pagesContent.contact.formTitle}</h2>
+              <EditableContactLeadForm />
+            </div>
           </div>
-        </section>
+        </div>
       </main>
     </EditableSiteShell>
   )
